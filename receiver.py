@@ -15,9 +15,16 @@ GITHUB_API_URL = "https://api.github.com"
 async def receive_semgrep(request: Request):
     print("Request received at /receiver")
     
+    # Log all incoming headers for debugging
+    print("Incoming headers:")
+    for header, value in request.headers.items():
+        if header.lower() != 'authorization':  # Don't log sensitive tokens
+            print(f"  {header}: {value}")
+    
     # Authentication check
     auth_header = request.headers.get('Authorization')
     if auth_header != f"Bearer {os.environ.get('API_TOKEN')}":
+        print("❌ Authentication failed")
         raise HTTPException(status_code=401, detail='Unauthorized')
     
     try:
@@ -31,22 +38,23 @@ async def receive_semgrep(request: Request):
             'pr_number': request.headers.get('X-GitHub-PR-Number')
         }
         
-        print(f"GitHub context: {github_context}")
+        print(f"Extracted GitHub context: {github_context}")
         
         # Check if we have all required data
         if all(github_context.values()):
             if GITHUB_TOKEN:
+                print("✅ GITHUB_TOKEN is set - proceeding to generate summary")
                 summary = create_summary(semgrep_data)
-                success = await post_github_comment(github_context, summary)
+                success = post_github_comment(github_context, summary)  # Removed await since it's sync now
                 
                 if success:
                     print(f"✅ Successfully posted comment to PR #{github_context['pr_number']}")
                 else:
                     print("❌ Failed to post GitHub comment")
             else:
-                print("⚠️ GITHUB_TOKEN not set - cannot post comment")
+                print("⚠️ GITHUB_TOKEN not set - skipping comment posting")
         else:
-            print(f"⚠️ Missing GitHub context data: {github_context}")
+            print(f"⚠️ Missing GitHub context data: {github_context} - skipping comment posting")
         
         return JSONResponse(content={'status': 'success', 'message': 'Results received and processed'})
     
@@ -135,7 +143,7 @@ def create_summary(semgrep_data):
     
     return summary
 
-async def post_github_comment(github_context, summary):
+def post_github_comment(github_context, summary):
     """Post summary as GitHub PR comment"""
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
@@ -150,19 +158,19 @@ async def post_github_comment(github_context, summary):
     }
     
     try:
-        print(f"Posting comment to: {comment_url}")
+        print(f"Attempting to post comment to: {comment_url}")
         response = requests.post(comment_url, json=comment_data, headers=headers, timeout=30)
         
         if response.status_code == 201:
-            print("Comment posted successfully!")
+            print("✅ Comment posted successfully!")
             return True
         else:
-            print(f"Failed to post comment. Status: {response.status_code}")
-            print(f"Response: {response.text}")
+            print(f"❌ Failed to post comment. Status code: {response.status_code}")
+            print(f"Response from GitHub: {response.text}")
             return False
             
     except Exception as e:
-        print(f"Error posting GitHub comment: {str(e)}")
+        print(f"❌ Error posting GitHub comment: {str(e)}")
         return False
 
 if __name__ == '__main__':
