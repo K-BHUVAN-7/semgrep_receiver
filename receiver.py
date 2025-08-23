@@ -3,7 +3,6 @@ from fastapi.responses import JSONResponse
 import os
 import json
 import requests
-from datetime import datetime
 
 app = FastAPI()
 
@@ -15,16 +14,17 @@ GITHUB_API_URL = "https://api.github.com"
 async def receive_semgrep(request: Request):
     print("Request received at /receiver")
     
-    # Log all incoming headers for debugging
+    # Log all incoming headers for debugging (excluding sensitive ones)
     print("Incoming headers:")
     for header, value in request.headers.items():
-        if header.lower() != 'authorization':  # Don't log sensitive tokens
+        if header.lower() not in ['authorization', 'x-github-token']:  # Hide sensitive info
             print(f"  {header}: {value}")
     
     # Authentication check
     auth_header = request.headers.get('Authorization')
-    if auth_header != f"Bearer {os.environ.get('API_TOKEN')}":
-        print("❌ Authentication failed")
+    expected_auth = f"Bearer {os.environ.get('API_TOKEN')}"
+    if auth_header != expected_auth:
+        print(f"❌ Authentication failed (expected: {expected_auth}, received: {auth_header})")
         raise HTTPException(status_code=401, detail='Unauthorized')
     
     try:
@@ -39,27 +39,25 @@ async def receive_semgrep(request: Request):
         }
         
         print(f"Extracted GitHub context: {github_context}")
+        print(f"GITHUB_TOKEN present: {'Yes' if GITHUB_TOKEN else 'No'}")
         
         # Check if we have all required data
-        if all(github_context.values()):
-            if GITHUB_TOKEN:
-                print("✅ GITHUB_TOKEN is set - proceeding to generate summary")
-                summary = create_summary(semgrep_data)
-                success = post_github_comment(github_context, summary)  # Removed await since it's sync now
-                
-                if success:
-                    print(f"✅ Successfully posted comment to PR #{github_context['pr_number']}")
-                else:
-                    print("❌ Failed to post GitHub comment")
+        if all(github_context.values()) and GITHUB_TOKEN:
+            print("✅ All required data present - generating summary and posting comment")
+            summary = create_summary(semgrep_data)
+            success = post_github_comment(github_context, summary)
+            
+            if success:
+                print(f"✅ Successfully posted comment to PR #{github_context['pr_number']}")
             else:
-                print("⚠️ GITHUB_TOKEN not set - skipping comment posting")
+                print("❌ Failed to post GitHub comment")
         else:
-            print(f"⚠️ Missing GitHub context data: {github_context} - skipping comment posting")
+            print("⚠️ Skipping comment posting - missing GitHub context or token")
         
         return JSONResponse(content={'status': 'success', 'message': 'Results received and processed'})
     
     except Exception as e:
-        print(f"Error processing request: {str(e)}")
+        print(f"❌ Error processing request: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 def create_summary(semgrep_data):
@@ -166,11 +164,11 @@ def post_github_comment(github_context, summary):
             return True
         else:
             print(f"❌ Failed to post comment. Status code: {response.status_code}")
-            print(f"Response from GitHub: {response.text}")
+            print(f"GitHub API response: {response.text}")
             return False
             
     except Exception as e:
-        print(f"❌ Error posting GitHub comment: {str(e)}")
+        print(f"❌ Error posting to GitHub: {str(e)}")
         return False
 
 if __name__ == '__main__':
