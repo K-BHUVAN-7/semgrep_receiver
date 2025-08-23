@@ -113,21 +113,7 @@ def create_summary(semgrep_data):
             summary += "   - Utilities and helpers\n"
             summary += "   - Models and interfaces\n\n"
             
-            summary += "**Suggested File Structure:**\n"
-            summary += "```
-            summary += "src/app/\n"
-            summary += "├── _core/                    # Services, guards, utils only\n"
-            summary += "│   ├── services/\n"
-            summary += "│   ├── guards/\n"
-            summary += "│   └── models/\n"
-            summary += "├── shared/\n"
-            summary += "│   └── layout/              # Move layout components here\n"
-            summary += "│       ├── header/\n"
-            summary += "│       ├── nav-bar/\n"
-            summary += "│       └── sidebar/\n"
-            summary += "├── features/                # Feature modules\n"
-            summary += "└── app.component.ts         # Root component (move here)\n"
-            summary += "```\n\n"
+            summary += "**Suggested File Structure:**\n``````\n\n"
             
             summary += "**Why This Matters:**\n"
             summary += "- 🎯 **Clear separation of concerns** - components vs services\n"
