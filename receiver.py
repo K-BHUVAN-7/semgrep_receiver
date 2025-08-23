@@ -31,17 +31,22 @@ async def receive_semgrep(request: Request):
             'pr_number': request.headers.get('X-GitHub-PR-Number')
         }
         
-        # Only post comment if we have GitHub context and GitHub token
-        if all(github_context.values()) and GITHUB_TOKEN:
-            summary = create_summary(semgrep_data)
-            success = await post_github_comment(github_context, summary)
-            
-            if success:
-                print(f"✅ Posted comment to PR #{github_context['pr_number']}")
+        print(f"GitHub context: {github_context}")
+        
+        # Check if we have all required data
+        if all(github_context.values()):
+            if GITHUB_TOKEN:
+                summary = create_summary(semgrep_data)
+                success = await post_github_comment(github_context, summary)
+                
+                if success:
+                    print(f"✅ Successfully posted comment to PR #{github_context['pr_number']}")
+                else:
+                    print("❌ Failed to post GitHub comment")
             else:
-                print("❌ Failed to post GitHub comment")
+                print("⚠️ GITHUB_TOKEN not set - cannot post comment")
         else:
-            print("⚠️ Skipping GitHub comment - missing context or token")
+            print(f"⚠️ Missing GitHub context data: {github_context}")
         
         return JSONResponse(content={'status': 'success', 'message': 'Results received and processed'})
     
@@ -77,6 +82,8 @@ def create_summary(semgrep_data):
             # Get the message from the first result
             first_result = rule_results[0]
             message = first_result.get('extra', {}).get('message', 'Architecture violation detected')
+            # Clean up unicode characters
+            message = message.replace('\u274c', '❌')
             summary += f"**Issue:** {message}\n\n"
             
             summary += f"**Components Found in _core/ Directory ({len(rule_results)}):**\n"
@@ -92,32 +99,39 @@ def create_summary(semgrep_data):
             # Add specific guidance
             summary += "### 🔧 **Recommended Actions**\n\n"
             summary += "**Immediate Steps:**\n"
-            summary += "1. Move `app.component.ts` to `src/app/` (root level)\n"
-            summary += "2. Move layout components to `src/app/shared/layout/` or `src/app/layout/`\n"
-            summary += "3. Keep `_core/` directory for:\n"
-            summary += "   - Services (auth, api, etc.)\n"
+            summary += "1. **Move `app.component.ts`** to `src/app/` (root level)\n"
+            summary += "2. **Move layout components** to `src/app/shared/layout/` or `src/app/layout/`\n"
+            summary += "3. **Keep `_core/` directory for:**\n"
+            summary += "   - Services (auth, api, http, etc.)\n"
             summary += "   - Guards and interceptors\n"
             summary += "   - Utilities and helpers\n"
             summary += "   - Models and interfaces\n\n"
             
-            summary += "**Architecture Best Practice:**\n"
+            summary += "**Suggested File Structure:**\n"
             summary += "```
             summary += "src/app/\n"
-            summary += "├── _core/           # Services, guards, utils only\n"
-            summary += "├── shared/          # Shared components\n"
-            summary += "├── layout/          # Layout components\n"
-            summary += "├── features/        # Feature modules\n"
-            summary += "└── app.component.ts # Root component\n"
+            summary += "├── _core/                    # Services, guards, utils only\n"
+            summary += "│   ├── services/\n"
+            summary += "│   ├── guards/\n"
+            summary += "│   └── models/\n"
+            summary += "├── shared/\n"
+            summary += "│   └── layout/              # Move layout components here\n"
+            summary += "│       ├── header/\n"
+            summary += "│       ├── nav-bar/\n"
+            summary += "│       └── sidebar/\n"
+            summary += "├── features/                # Feature modules\n"
+            summary += "└── app.component.ts         # Root component (move here)\n"
             summary += "```\n\n"
             
             summary += "**Why This Matters:**\n"
-            summary += "- Maintains clear separation of concerns\n"
-            summary += "- Improves code maintainability\n"
-            summary += "- Follows Angular best practices\n"
-            summary += "- Makes the codebase easier to navigate for team members\n"
+            summary += "- 🎯 **Clear separation of concerns** - components vs services\n"
+            summary += "- 🔧 **Better maintainability** - easier to find and modify code\n"
+            summary += "- 📚 **Angular best practices** - follows official style guide\n"
+            summary += "- 👥 **Team collaboration** - consistent structure for all developers\n"
     
     summary += "\n---\n\n"
-    summary += "💡 **Next Steps:** Please address these architecture violations before merging to maintain code quality standards."
+    summary += "⚡ **Action Required:** Please address these architecture violations before merging to maintain code quality standards.\n\n"
+    summary += "*This comment was generated automatically by your Semgrep architecture scanner.*"
     
     return summary
 
@@ -136,8 +150,17 @@ async def post_github_comment(github_context, summary):
     }
     
     try:
+        print(f"Posting comment to: {comment_url}")
         response = requests.post(comment_url, json=comment_data, headers=headers, timeout=30)
-        return response.status_code == 201
+        
+        if response.status_code == 201:
+            print("Comment posted successfully!")
+            return True
+        else:
+            print(f"Failed to post comment. Status: {response.status_code}")
+            print(f"Response: {response.text}")
+            return False
+            
     except Exception as e:
         print(f"Error posting GitHub comment: {str(e)}")
         return False
